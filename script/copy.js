@@ -1,15 +1,9 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-const config = {
-  cSize: 300,
-};
+const config = {};
 
 const rotateBtn = document.querySelector("#rotateBtn");
-
-canvas.width = canvas.height = config.cSize;
-
 const PI = Math.PI;
-
 const translateM = (px, py) => [1, 0, px, 0, 1, py, 0, 0, 1];
 const scaleM = (sx, sy) => [sx, 0, 0, 0, sy, 0, 0, 0, 1];
 const rotate = (deg) => [

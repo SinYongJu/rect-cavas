@@ -1,14 +1,9 @@
 const canvas = document.getElementById("canvas");
+const container = document.querySelector(".container");
 const ctx = canvas.getContext("2d");
-const config = {
-  cSize: 1000,
-  degree: 0,
-};
 const PI = Math.PI;
-
-const rotateBtn = document.getElementById("rotateBtn");
+const resetBtn = document.getElementById("resetBtn");
 const rotateCanvasBtn = document.getElementById("rotateCanvasBtn");
-
 /**
  * Performs the even-odd-rule Algorithm (a raycasting algorithm) to find out whether a point is in a given polygon.
  * This runs in O(n) where n is the number of edges of the polygon.
@@ -79,164 +74,365 @@ const getPoint = (m, x, y) => {
 const getCode3X1 = (m) => {
   return [m[0], m[3]];
 };
-const ShapeRect = (function () {
-  function ShapeRect(x, y, degree, scale, path = []) {
+
+class Layer {
+  constructor(editor) {
+    this.editor = editor;
+  }
+  add(x, y, graphic) {
     this.x = x;
     this.y = y;
-
-    this.degree = degree;
-    this.scale = scale;
-    this.hover = false;
-    const xCoords = path.map(([x]) => x);
-    const yCoords = path.map(([y]) => y);
-    this.w = Math.max.apply(null, xCoords) - Math.min.apply(null, xCoords);
-    this.h = Math.max.apply(null, yCoords) - Math.min.apply(null, yCoords);
-    this.transform = trasformedPoint(-this.w / 2, -this.h / 2);
-    this.path = path;
-    this.coordinates = this.getPath(this.path);
-    this.realCoordinate = this.coordinates.map(([x, y]) =>
-      getPoint(translateM(this.x, this.y), x, y)
-    );
-    this.shape = new Path2D();
+    this.graphic = graphic;
   }
-  ShapeRect.prototype.getPath = function (path) {
-    return path.map(([x, y]) => this.transform(x, y, this.degree));
-  };
-  ShapeRect.prototype.setDegree = function (degree) {
-    this.degree = degree;
-  };
-  ShapeRect.prototype.update = function () {
-    this.coordinates = this.getPath(this.path);
-    this.realCoordinate = this.coordinates.map(([x, y]) =>
-      getPoint(translateM(this.x, this.y), x, y)
-    );
-  };
-  ShapeRect.prototype.define = function (ctx) {
-    this.shape = new Path2D();
-    ctx.beginPath();
-    this.coordinates.forEach(([x, y], i) => {
-      // ctx.beginPath();
-      this.shape.moveTo(x, y);
-      if (this.coordinates[i + 1]) {
-        this.shape.lineTo(
-          this.coordinates[i + 1][0],
-          this.coordinates[i + 1][1]
-        );
-      } else {
-        this.shape.lineTo(this.coordinates[0][0], this.coordinates[0][1]);
-      }
-    });
-    ctx.stroke(this.shape);
-  };
-  ShapeRect.prototype.setXY = function (x, y) {};
-  ShapeRect.prototype.draw = function (ctx) {
-    this.update();
+  setXY(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+  setGraphic(graphic) {
+    this.graphic = graphic;
+  }
+  draw(ctx) {
     ctx.save();
     ctx.translate(this.x, this.y);
-    ctx.beginPath();
-    ctx.moveTo(-this.w / 2, -this.h / 2);
-    const r = trasformedPoint(-this.w / 2, -this.h / 2)(
-      0,
-      -this.h,
-      this.degree
-    );
-    ctx.lineTo(r[0], r[1]);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(r[0], r[1], 4, PI * 2, 0);
-    ctx.fill();
-    this.define(ctx);
+    this.graphic(ctx);
     ctx.restore();
-  };
-  return ShapeRect;
-})();
-
-const rects = [];
-
-const randomRange = (max, isf = true) => {
-  if (isf) return max;
-  const n = Math.random() * max;
-  return Math.random() > 0.5 ? n : -n;
-};
-Array(1)
-  .fill(null)
-  .forEach(() => {
-    rects.push(
-      new ShapeRect(
-        randomRange(config.cSize / 2 / 2),
-        randomRange(config.cSize / 2 / 2),
-        45,
-        1,
-        [
-          [0, 0],
-          [randomRange(50), 0],
-          [randomRange(50), randomRange(50)],
-          [0, randomRange(50)],
-        ]
-      )
-    );
-  });
-
-function grid() {
-  ctx.beginPath();
-  ctx.moveTo(0, -config.cSize / 2);
-  ctx.lineTo(0, config.cSize / 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(-config.cSize / 2, 0);
-  ctx.lineTo(config.cSize / 2, 0);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.fillStyle = "red";
-  ctx.arc(0, 0, 5, PI * 2, 0);
-  ctx.fill();
+  }
 }
-function draw() {
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.restore();
-  //
-  ctx.save();
-  ctx.translate(config.cSize / 2, config.cSize / 2);
-  grid();
-  ctx.rotate(config.degree);
-  rects.forEach((rect) => {
-    rect.draw(ctx);
-  });
-  ctx.restore();
+
+class Editor {
+  constructor(ctx, canvas, container) {
+    this.canvas = canvas;
+    this.ctx = ctx;
+    this.container = container;
+    this.devs = [];
+    this.graphicDefault = [];
+    this.graphics = [];
+    this.tmp = null;
+    window.addEventListener("resize", this.resize.bind(this));
+    this.resize();
+    this.animate.call(this);
+  }
+  resize() {
+    this.width = container.clientWidth;
+    this.height = container.clientHeight;
+    this.canvas.width = this.width;
+    this.canvas.height = this.height;
+  }
+  reset() {
+    this.resetGraphic();
+    this.resetGraphicDefault();
+    this.resetGraphicDev();
+    this.resetGraphicTmp();
+  }
+  layer(x, y, graphic) {
+    const layer = new Layer(this);
+    layer.add(x, y, graphic);
+    return layer;
+  }
+  addGraphic(layer) {
+    this.graphics.push(layer);
+  }
+  addGraphicDefault(layer) {
+    this.graphicDefault.push(layer);
+  }
+  addGraphicDev(layer) {
+    this.devs.push(layer);
+  }
+  addGraphicTmp(layer) {
+    this.tmp = layer;
+  }
+  resetGraphic() {
+    this.graphics = [];
+  }
+  resetGraphicDefault() {
+    this.graphicDefault = [];
+  }
+  resetGraphicDev() {
+    this.devs = [];
+  }
+  resetGraphicTmp() {
+    this.tmp = null;
+  }
+  drawDevGrid(ctx) {
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.fillStyle = "blue";
+    ctx.arc(0, 0, 3, PI * 2, 0);
+    ctx.fill();
+    ctx.closePath();
+  }
+  animate(timeStamp = 0) {
+    this.ctx.clearRect(0, 0, this.width, this.height);
+    this.graphicDefault.forEach((graphic) => {
+      graphic.draw(this.ctx);
+    });
+    this.graphics.forEach((graphic) => {
+      graphic.draw(this.ctx);
+    });
+    this.tmp && this.tmp.draw(this.ctx);
+    this.devs.forEach((graphic) => {
+      graphic.draw(this.ctx);
+    });
+
+    window.requestAnimationFrame(this.animate.bind(this));
+  }
 }
-function detectShape(e) {
-  const point = [e.offsetX - canvas.width / 2, e.offsetY - canvas.height / 2];
-  let target = null;
-  for (let i = 0; i < rects.length; i++) {
-    console.log(rects[i].realCoordinate);
-    const isIn = pointInPolygon(rects[i].realCoordinate, point);
-    if (isIn) {
-      target = rects[i];
-      break;
+class Point {
+  constructor(x, y, index) {
+    this.index = index;
+    this.path = new Path2D();
+    this.x = x;
+    this.y = y;
+  }
+  update(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+  draw(ctx) {
+    this.path.moveTo(this.x, this.y);
+    this.path.arc(this.x, this.y, 8, PI * 2, 0);
+    this.path.closePath();
+    ctx.fill(this.path);
+  }
+}
+
+class Shape {
+  constructor(path = []) {
+    this.centroid = [];
+    this.shader = [];
+    this.xCoords = [];
+    this.yCoords = [];
+    this.w = 0;
+    this.h = 0;
+    this.setPath(path);
+    this.shaderCentroid = [];
+    this.shaderPoints = [];
+  }
+  setPath(path) {
+    this.path = path;
+    this.segments = this.path.reduce((total, curr, index, array) => {
+      const item =
+        index === array.length - 1
+          ? [curr, array[0]]
+          : [curr, array[index + 1]];
+      total.push(item);
+      return total;
+    }, []);
+    this.xCoords = this.path.map((p) => p[0]);
+    this.yCoords = this.path.map((p) => p[1]);
+    this.setWidth();
+    this.setHeight();
+    this.centroid = this.getCentroid(this.xCoords, this.yCoords);
+    this.setShader();
+    this.shaderPoints = [];
+    for (let i = 0; i < this.path.length; i++) {
+      const [x, y] = this.path[i];
+      this.shaderPoints.push(new Point(x, y, i));
     }
   }
-  if (target) {
-    console.log(target);
+  setWidth() {
+    this.w = this.xCoords.length
+      ? Math.abs(
+          Math.max.apply(this, this.xCoords) -
+            Math.min.apply(this, this.xCoords)
+        )
+      : 0;
   }
-  return target;
-}
-function main() {
-  draw();
-  rotateCanvasBtn.addEventListener("click", function (e) {
-    config.degree += 20;
-    // stage angle 계산 필요
-    // for (let i = 0; i < rects.length; i++) {
-    //   rects[i].setDegree(rects[i].degree + config.degree);
-    // }
-    draw();
-  });
-  rotateBtn.addEventListener("click", function () {
-    draw();
-  });
-  canvas.addEventListener("click", detectShape);
+  setHeight() {
+    this.h = this.yCoords.length
+      ? Math.abs(
+          Math.max.apply(this, this.yCoords) -
+            Math.min.apply(this, this.yCoords)
+        )
+      : 0;
+  }
+  setShader() {
+    this.shader = this.path.map(([x, y]) => [x * 1.2, y * 1.2]);
+    let xCoords = this.shader.map((p) => p[0]);
+    let yCoords = this.shader.map((p) => p[1]);
+    this.shaderCentroid = this.getCentroid(xCoords, yCoords);
+  }
+  getCentroid(xCoords, yCoords) {
+    let k = xCoords.length;
+    let xCoordSum = xCoords.reduce((num, curr) => (num += curr), 0);
+    let yCoordSum = yCoords.reduce((num, curr) => (num += curr), 0);
+    return [xCoordSum / k, yCoordSum / k];
+  }
+  drawPath(ctx) {
+    ctx.beginPath();
+    ctx.strokeStyle = "yellow";
+    ctx.moveTo(this.path[0][0], this.path[0][1]);
+    for (let i = 1; i < this.path.length; i++) {
+      const [x, y] = this.path[i];
+      ctx.lineTo(x, y);
+      ctx.moveTo(x, y);
+    }
+    ctx.lineTo(this.path[0][0], this.path[0][1]);
+    ctx.stroke();
+  }
+  drawShaderPoints(ctx) {
+    ctx.beginPath();
+    ctx.fillStyle = "pink";
+    for (let i = 0; i < this.shaderPoints.length; i++) {
+      this.shaderPoints[i].draw(ctx);
+    }
+    ctx.moveTo(this.centroid[0], this.centroid[1]);
+    ctx.arc(this.centroid[0], this.centroid[1], 5, PI * 2, 0);
+    ctx.fill();
+  }
+  draw(ctx) {
+    if (!this.path.length) return;
+    this.drawPath(ctx);
+
+    this.drawShaderPoints(ctx);
+    // shader
+    ctx.save();
+    ctx.beginPath();
+    const [cx, cy] = this.shaderCentroid.length
+      ? [
+          this.shaderCentroid[0] - this.centroid[0],
+          this.shaderCentroid[1] - this.centroid[1],
+        ]
+      : [0, 0];
+
+    ctx.translate(-cx, -cy);
+    ctx.strokeStyle = "red";
+    ctx.moveTo(this.shader[0][0], this.shader[0][1]);
+    for (let i = 1; i < this.shader.length; i++) {
+      const [x, y] = this.shader[i];
+      ctx.lineTo(x, y);
+      ctx.moveTo(x, y);
+    }
+    ctx.lineTo(this.shader[0][0], this.shader[0][1]);
+    ctx.stroke();
+    ctx.beginPath();
+
+    ctx.fillStyle = "red";
+    ctx.moveTo(this.shaderCentroid[0], this.shaderCentroid[1]);
+    ctx.arc(this.shaderCentroid[0], this.shaderCentroid[1], 5, PI * 2, 0);
+    ctx.fill();
+
+    ctx.closePath();
+    ctx.restore();
+  }
 }
 
-canvas.width = canvas.height = config.cSize;
+function getPointerCoord(e, canvas) {
+  let x = e.clientX - canvas.offsetLeft;
+  let y = e.clientY - canvas.offsetTop;
+  return [x, y];
+}
+function drawEvent(editor) {
+  let startPoint = [0, 0];
+  let isStart = false;
+  const down = (e) => {
+    if (editor.tmp || isStart) return;
+    isStart = true;
+    let [x, y] = getPointerCoord(e, editor.canvas);
+    startPoint = [x, y];
+    editor.addGraphicTmp(new Shape());
+  };
+  const move = (e) => {
+    if (!isStart) return;
+    let [x, y] = getPointerCoord(e, editor.canvas);
+    editor.tmp.setPath([
+      startPoint,
+      [x, startPoint[1]],
+      [x, y],
+      [startPoint[0], y],
+    ]);
+  };
+  const up = (e) => {
+    if (!isStart) return;
+    const w = editor.tmp.w;
+    const h = editor.tmp.h;
+    const area = Math.sqrt(w ** 2 + h ** 2);
+    if (w < 10 || h < 10 || area < 50) {
+      editor.tmp = null;
+    }
+    isStart = false;
+    startPoint = [0, 0];
+  };
+
+  window.document.addEventListener("keyup", function (e) {
+    if (e.key.toLocaleLowerCase() === "enter") {
+      editor.addGraphic(editor.tmp);
+      editor.resetGraphicTmp();
+    }
+  });
+
+  return {
+    down,
+    move,
+    up,
+  };
+}
+function modifyEvent(editor) {
+  let isStart = false;
+  let target = null;
+  const down = (e) => {
+    if (!isStart && !target && editor.tmp) {
+      let [x, y] = getPointerCoord(e, editor.canvas);
+      const s = editor.tmp.shaderPoints;
+      for (let i = 0; i < s.length; i++) {
+        if (editor.ctx.isPointInPath(s[i].path, x, y)) {
+          startPoints = {
+            x,
+            y,
+          };
+          target = s[i];
+          isStart = true;
+          break;
+        }
+      }
+    }
+  };
+
+  const move = (e) => {
+    if (isStart && target && editor.tmp) {
+      let [x, y] = getPointerCoord(e, editor.canvas);
+      const tPoints = editor.tmp.path.slice();
+      const tPoint = tPoints[target.index];
+      tPoint[0] = x;
+      tPoint[1] = y;
+      editor.tmp.setPath(editor.tmp.path);
+    }
+  };
+  const up = (e) => {
+    target = null;
+    isStart = false;
+  };
+
+  editor.canvas.addEventListener("mousedown", down);
+  editor.canvas.addEventListener("mousemove", move);
+  editor.canvas.addEventListener("mouseup", up);
+}
+
+function main() {
+  editor.addGraphicDev(
+    editor.layer(editor.width / 2, editor.height / 2, editor.drawDevGrid)
+  );
+  editor.addGraphicDefault(
+    editor.layer(50, 50, (ctx) => {
+      ctx.beginPath();
+      ctx.fillStyle = "red";
+      ctx.rect(0, 0, 100, 60);
+      ctx.fill();
+      ctx.closePath();
+    })
+  );
+  const drawEventHandler = drawEvent(editor);
+  editor.canvas.addEventListener("mousedown", drawEventHandler.down);
+  editor.canvas.addEventListener("mousemove", drawEventHandler.move);
+  editor.canvas.addEventListener("mouseleave", drawEventHandler.up);
+  editor.canvas.addEventListener("mouseup", drawEventHandler.up);
+
+  resetBtn.addEventListener("click", function () {
+    editor.resetGraphicTmp();
+    console.log("click");
+  });
+  modifyEvent(editor);
+}
+let editor = new Editor(ctx, canvas, container);
+
 main();
